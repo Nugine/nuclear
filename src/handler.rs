@@ -72,9 +72,9 @@ where
         't: 'a,
         Self: 'a,
     {
-        let mut fut = state::enter(self.s.clone(), || self.h.handle(req));
+        let mut fut = state::enter(&self.s, || self.h.handle(req));
         Box::pin(future::poll_fn(move |cx| {
-            state::enter(self.s.clone(), || fut.as_mut().poll(cx))
+            state::enter(&self.s, || fut.as_mut().poll(cx))
         }))
     }
 }

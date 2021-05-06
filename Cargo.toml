@@ -1,6 +1,6 @@
 [package]
 name = "nuclear"
-version = "0.0.9"
+version = "0.0.10-dev"
 authors = ["Nugine <nugine@foxmail.com>"]
 edition = "2018"
 

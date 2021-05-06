@@ -1,5 +1,5 @@
 #![deny(clippy::all)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod body;
 pub mod error;
