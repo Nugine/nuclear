@@ -40,8 +40,7 @@ async fn to_bytes(mut body: Body, length_limit: usize) -> Result<Bytes> {
 }
 
 fn parse_mime(req: &Request) -> Option<Mime> {
-    req.as_ref_hyper()
-        .headers()
+    req.headers()
         .get(http::header::CONTENT_TYPE)?
         .to_str()
         .ok()?
@@ -88,14 +87,14 @@ impl JsonParser {
         }
 
         {
-            let hreq = req.as_mut_hyper();
+            let hreq = &mut **req;
             if hreq.extensions().get::<FullBody>().is_none() {
                 let full_body = FullBody(to_bytes(take_body(hreq), self.length_limit).await?);
                 hreq.extensions_mut().insert(full_body);
             }
         }
 
-        let full_body = req.as_ref_hyper().extensions().get::<FullBody>().unwrap();
+        let full_body = req.extensions().get::<FullBody>().unwrap();
 
         match serde_json::from_slice(&*full_body.0) {
             Ok(value) => Ok(value),
@@ -117,7 +116,7 @@ impl JsonExt for Request {
     }
 
     async fn json<'r, T: Deserialize<'r>>(&'r mut self) -> Result<T> {
-        let parser = match self.as_ref_hyper().extensions().get::<JsonParser>() {
+        let parser = match self.extensions().get::<JsonParser>() {
             Some(p) => p.clone(),
             None => JsonParser::default(),
         };

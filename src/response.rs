@@ -2,6 +2,7 @@ use crate::http::{self, HeaderValue, Mime, StatusCode};
 use crate::internal_prelude::*;
 
 use std::convert::TryFrom;
+use std::ops;
 
 use futures::future::{self, Either, Ready};
 use serde::Serialize;
@@ -22,11 +23,6 @@ impl Response {
         *self.inner
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn as_mut_hyper(&mut self) -> &mut HyperResponse {
-        &mut *self.inner
-    }
-
     pub fn new(status: StatusCode, body: Body) -> Self {
         let mut res = HyperResponse::new(body);
         *res.status_mut() = status;
@@ -42,6 +38,20 @@ impl Response {
             http::header::CONTENT_TYPE,
             HeaderValue::from_static(mime.as_ref()),
         );
+    }
+}
+
+impl ops::Deref for Response {
+    type Target = HyperResponse;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
+    }
+}
+
+impl ops::DerefMut for Response {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner.as_mut()
     }
 }
 

@@ -1,4 +1,5 @@
-use crate::http;
+use std::ops;
+
 use crate::internal_prelude::*;
 
 #[derive(Debug)]
@@ -12,20 +13,18 @@ impl Request {
             inner: Box::new(req),
         }
     }
+}
 
-    pub(crate) fn as_ref_hyper(&self) -> &HyperRequest {
-        &*self.inner
+impl ops::Deref for Request {
+    type Target = HyperRequest;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
     }
+}
 
-    pub(crate) fn as_mut_hyper(&mut self) -> &mut HyperRequest {
-        &mut *self.inner
-    }
-
-    pub fn method(&self) -> &http::Method {
-        self.as_ref_hyper().method()
-    }
-
-    pub fn uri(&self) -> &http::Uri {
-        self.as_ref_hyper().uri()
+impl ops::DerefMut for Request {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner.as_mut()
     }
 }

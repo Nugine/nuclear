@@ -50,7 +50,7 @@ pub trait SimpleRouterExt {
 
 impl SimpleRouterExt for Request {
     fn capture(&self) -> Option<&CaptureOwned> {
-        self.as_ref_hyper().extensions().get::<CaptureOwned>()
+        self.extensions().get::<CaptureOwned>()
     }
 }
 
@@ -99,7 +99,7 @@ impl Handler for SimpleRouter {
         Self: 'a,
     {
         Box::pin(async move {
-            let hreq = req.as_mut_hyper();
+            let hreq = &mut *req;
             let method = hreq.method();
             let path = hreq.uri().path();
             match self.find(method, path) {
