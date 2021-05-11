@@ -64,6 +64,15 @@ where
     }
 }
 
+impl<F> Clone for HandlerFn<F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self { f: self.f.clone() }
+    }
+}
+
 pub fn ref_handler<S, F>(f: F) -> RefHandlerFn<S, F> {
     RefHandlerFn {
         f,
@@ -100,6 +109,18 @@ where
     }
 }
 
+impl<S, F> Clone for RefHandlerFn<S, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 pub fn middleware<F>(f: F) -> MiddlewareFn<F> {
     MiddlewareFn { f }
 }
@@ -123,6 +144,15 @@ where
         Self: 'a,
     {
         Box::pin(AsyncFn::call(&self.f, (req, next)))
+    }
+}
+
+impl<F> Clone for MiddlewareFn<F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self { f: self.f.clone() }
     }
 }
 
@@ -166,5 +196,17 @@ where
             ),
         };
         Box::pin(async move { AsyncFn::call(&self.f, (&*state, req, next)).await })
+    }
+}
+
+impl<S, F> Clone for RefMiddlewareFn<S, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            _marker: PhantomData,
+        }
     }
 }
