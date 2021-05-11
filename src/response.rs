@@ -183,3 +183,9 @@ where
         future::ready(json(self.status, self.value).map_err(Into::into))
     }
 }
+
+impl From<StatusCode> for Response {
+    fn from(status: StatusCode) -> Self {
+        Response::new(status, Body::empty())
+    }
+}

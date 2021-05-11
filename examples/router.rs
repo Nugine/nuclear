@@ -1,4 +1,4 @@
-use nuclear::error::NotFound;
+use nuclear::error::StatusError;
 use nuclear::functional::{ref_handler, ref_middleware};
 use nuclear::prelude::{Handler, Request, Responder, Response, Result};
 use nuclear::router::{SimpleRouter, SimpleRouterExt};
@@ -43,7 +43,7 @@ impl App {
     }
 
     async fn not_found(&self, _: Request) -> Result<Response> {
-        Err(NotFound.into())
+        Err(StatusError::NOT_FOUND.into())
     }
 
     async fn recover(&self, req: Request, next: &dyn Handler) -> Result<Response> {

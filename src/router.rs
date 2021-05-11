@@ -1,4 +1,4 @@
-use crate::error::NotFound;
+use crate::error::StatusError;
 use crate::http::Method;
 use crate::internal_prelude::*;
 
@@ -109,7 +109,7 @@ impl Handler for SimpleRouter {
                 }
                 None => match self.default.as_ref() {
                     Some(h) => h.handle(req).await,
-                    None => Ok(NotFound.into()),
+                    None => Ok(StatusError::NOT_FOUND.into()),
                 },
             }
         })
