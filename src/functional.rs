@@ -4,6 +4,7 @@ use crate::state;
 
 use std::any::type_name;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 mod sealed {
     use std::future::Future;
@@ -121,6 +122,54 @@ where
     }
 }
 
+pub fn arc_handler<S, F>(f: F) -> ArcHandlerFn<S, F> {
+    ArcHandlerFn {
+        f,
+        _marker: PhantomData,
+    }
+}
+
+pub struct ArcHandlerFn<S, F> {
+    f: F,
+    _marker: PhantomData<fn(Arc<S>)>,
+}
+
+impl<S, F, R> Handler for ArcHandlerFn<S, F>
+where
+    S: Send + Sync + 'static,
+    F: for<'a> AsyncFn<'a, (Arc<S>, Request), Output = R>,
+    R: Responder,
+{
+    #[track_caller]
+    fn handle<'t, 'a>(&'t self, req: Request) -> BoxFuture<'a, Result<Response>>
+    where
+        't: 'a,
+        Self: 'a,
+    {
+        let state = match state::inject::<S>() {
+            Some(s) => s,
+            None => panic!(
+                "failed to inject state <{}> for handler <{}>",
+                type_name::<S>(),
+                type_name::<F>(),
+            ),
+        };
+        Box::pin(async move { AsyncFn::call(&self.f, (state, req)).await.respond().await })
+    }
+}
+
+impl<S, F> Clone for ArcHandlerFn<S, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 pub fn middleware<F>(f: F) -> MiddlewareFn<F> {
     MiddlewareFn { f }
 }
@@ -200,6 +249,61 @@ where
 }
 
 impl<S, F> Clone for RefMiddlewareFn<S, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+pub fn arc_middleware<S, F>(f: F) -> ArcMiddlewareFn<S, F>
+where
+    S: Send + Sync + 'static,
+    F: for<'a> AsyncFn<'a, (Arc<S>, Request, &'a dyn Handler)>,
+{
+    ArcMiddlewareFn {
+        f,
+        _marker: PhantomData,
+    }
+}
+
+pub struct ArcMiddlewareFn<S, F> {
+    f: F,
+    _marker: PhantomData<fn(&S)>,
+}
+
+impl<S, F> Middleware for ArcMiddlewareFn<S, F>
+where
+    S: Send + Sync + 'static,
+    F: for<'a> AsyncFn<'a, (Arc<S>, Request, &'a dyn Handler), Output = Result<Response>>,
+{
+    fn handle<'t, 'n, 'a>(
+        &'t self,
+        req: Request,
+        next: &'a dyn Handler,
+    ) -> BoxFuture<'a, Result<Response>>
+    where
+        't: 'a,
+        'n: 'a,
+        Self: 'a,
+    {
+        let state = match state::inject::<S>() {
+            Some(s) => s,
+            None => panic!(
+                "failed to inject state <{}> for middleware <{}>",
+                type_name::<S>(),
+                type_name::<F>(),
+            ),
+        };
+        Box::pin(async move { AsyncFn::call(&self.f, (state, req, next)).await })
+    }
+}
+
+impl<S, F> Clone for ArcMiddlewareFn<S, F>
 where
     F: Clone,
 {
