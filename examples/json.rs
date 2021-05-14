@@ -2,14 +2,13 @@ use nuclear::body::JsonExt;
 use nuclear::functional::{handler, middleware};
 use nuclear::http::StatusCode;
 use nuclear::prelude::{Handler, Request, Response, Result};
-use nuclear::response::{Json, Responder};
 
 use serde_json::Value;
 
-async fn json_echo(mut req: Request) -> Result<Json<Value>> {
+async fn json_echo(mut req: Request) -> Result<Response> {
     let body = req.json::<Value>().await?;
     println!("{}", body);
-    Ok(Json(body))
+    Ok(Response::json(body)?)
 }
 
 async fn recover(req: Request, next: &dyn Handler) -> Result<Response> {
@@ -20,11 +19,7 @@ async fn recover(req: Request, next: &dyn Handler) -> Result<Response> {
                 "message": err.to_string(),
             });
             eprintln!("{}", value);
-
-            Json(value)
-                .with_status(StatusCode::INTERNAL_SERVER_ERROR)
-                .respond()
-                .await
+            Ok(Response::json(value)?.with_status(StatusCode::INTERNAL_SERVER_ERROR))
         }
         ret => ret,
     }

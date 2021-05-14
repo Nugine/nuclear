@@ -18,7 +18,7 @@ pub(crate) mod internal_prelude {
     pub use crate::handler::Handler;
     pub use crate::middleware::Middleware;
     pub use crate::request::Request;
-    pub use crate::response::{Responder, Response};
+    pub use crate::response::Response;
 
     pub use std::future::Future;
     pub use std::pin::Pin;
@@ -37,7 +37,7 @@ pub use crate::error::{Error, Result};
 pub mod prelude {
     pub use crate::error::{Error, Result};
     pub use crate::request::Request;
-    pub use crate::response::{Responder, Response};
+    pub use crate::response::Response;
 
     pub use crate::handler::*;
     pub use crate::middleware::*;

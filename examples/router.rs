@@ -1,6 +1,6 @@
 use nuclear::error::StatusError;
 use nuclear::functional::{ref_handler, ref_middleware};
-use nuclear::prelude::{Handler, Request, Responder, Response, Result};
+use nuclear::prelude::{Handler, Request, Response, Result};
 use nuclear::router::{SimpleRouter, SimpleRouterExt};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -50,7 +50,7 @@ impl App {
         match next.handle(req).await {
             Err(err) => {
                 eprintln!("Error: {:?}", err);
-                "Oops".respond().await
+                Ok(Response::text("Oops"))
             }
             ret => ret,
         }

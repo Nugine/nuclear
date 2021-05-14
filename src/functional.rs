@@ -3,6 +3,7 @@ use crate::internal_prelude::*;
 use crate::state;
 
 use std::any::type_name;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -54,14 +55,20 @@ pub struct HandlerFn<F> {
 impl<F, R> Handler for HandlerFn<F>
 where
     F: for<'a> AsyncFn<'a, (Request,), Output = R>,
-    R: Responder,
+    R: TryInto<Response>,
+    R::Error: Into<Error>,
 {
     fn handle<'t, 'a>(&'t self, req: Request) -> BoxFuture<'a, Result<Response>>
     where
         't: 'a,
         Self: 'a,
     {
-        Box::pin(async move { AsyncFn::call(&self.f, (req,)).await.respond().await })
+        Box::pin(async move {
+            AsyncFn::call(&self.f, (req,))
+                .await
+                .try_into()
+                .map_err(Into::into)
+        })
     }
 }
 
@@ -90,7 +97,8 @@ impl<S, F, R> Handler for RefHandlerFn<S, F>
 where
     S: Send + Sync + 'static,
     F: for<'a> AsyncFn<'a, (&'a S, Request), Output = R>,
-    R: Responder,
+    R: TryInto<Response>,
+    R::Error: Into<Error>,
 {
     #[track_caller]
     fn handle<'t, 'a>(&'t self, req: Request) -> BoxFuture<'a, Result<Response>>
@@ -106,7 +114,12 @@ where
                 type_name::<F>(),
             ),
         };
-        Box::pin(async move { AsyncFn::call(&self.f, (&*state, req)).await.respond().await })
+        Box::pin(async move {
+            AsyncFn::call(&self.f, (&*state, req))
+                .await
+                .try_into()
+                .map_err(Into::into)
+        })
     }
 }
 
@@ -138,7 +151,8 @@ impl<S, F, R> Handler for ArcHandlerFn<S, F>
 where
     S: Send + Sync + 'static,
     F: for<'a> AsyncFn<'a, (Arc<S>, Request), Output = R>,
-    R: Responder,
+    R: TryInto<Response>,
+    R::Error: Into<Error>,
 {
     #[track_caller]
     fn handle<'t, 'a>(&'t self, req: Request) -> BoxFuture<'a, Result<Response>>
@@ -154,7 +168,12 @@ where
                 type_name::<F>(),
             ),
         };
-        Box::pin(async move { AsyncFn::call(&self.f, (state, req)).await.respond().await })
+        Box::pin(async move {
+            AsyncFn::call(&self.f, (state, req))
+                .await
+                .try_into()
+                .map_err(Into::into)
+        })
     }
 }
 

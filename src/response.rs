@@ -1,10 +1,11 @@
 use crate::http::{self, HeaderValue, Mime, StatusCode};
 use crate::internal_prelude::*;
 
+use std::convert::TryFrom;
 use std::ops;
 
-use futures::future::{self, Either, Ready};
-use pin_project::pin_project;
+// use futures::future::{self, Either, Ready};
+// use pin_project::pin_project;
 use serde::Serialize;
 
 #[derive(Debug)]
@@ -39,6 +40,27 @@ impl Response {
             HeaderValue::from_static(mime.as_ref()),
         );
     }
+
+    pub fn text(s: impl Into<String>) -> Self {
+        let mut res = Self::new_ok(Body::from(s.into()));
+        res.set_static_mime(&mime::TEXT_PLAIN_UTF_8);
+        res
+    }
+
+    pub fn json<T>(value: T) -> Result<Response, serde_json::Error>
+    where
+        T: Serialize,
+    {
+        let bytes_vec = serde_json::to_vec(&value)?;
+        let mut res = Response::new_ok(Body::from(bytes_vec));
+        res.set_static_mime(&mime::APPLICATION_JSON);
+        Ok(res)
+    }
+
+    pub fn with_status(mut self, status: StatusCode) -> Self {
+        *self.status_mut() = status;
+        self
+    }
 }
 
 impl ops::Deref for Response {
@@ -61,165 +83,178 @@ impl From<StatusCode> for Response {
     }
 }
 
-pub trait Responder: Send + Sync {
-    type Future: Future<Output = Result<Response>> + Send;
-
-    fn respond(self) -> Self::Future;
-
-    fn with_status(self, status: StatusCode) -> WithStatus<Self>
-    where
-        Self: Sized,
-    {
-        WithStatus { r: self, status }
+impl From<()> for Response {
+    fn from(_: ()) -> Self {
+        Response::new_ok(Body::empty())
     }
 }
 
-pub struct WithStatus<R> {
-    r: R,
-    status: StatusCode,
-}
-
-impl<R> Responder for WithStatus<R>
-where
-    R: Responder,
-{
-    type Future = CustomResponderFuture<R>;
-
-    fn respond(self) -> Self::Future {
-        CustomResponderFuture {
-            future: self.r.respond(),
-            status: Some(self.status),
-        }
+impl From<&'_ str> for Response {
+    fn from(s: &'_ str) -> Self {
+        Response::text(s)
     }
 }
 
-impl Responder for () {
-    type Future = Ready<Result<Response>>;
-
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(Response::new_ok(Body::empty())))
+impl From<String> for Response {
+    fn from(s: String) -> Self {
+        Response::text(s)
     }
 }
 
-impl Responder for Response {
-    type Future = Ready<Result<Response>>;
+impl TryFrom<Result<Response>> for Response {
+    type Error = Error;
 
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(self))
+    fn try_from(ret: Result<Response>) -> Result<Self, Self::Error> {
+        ret
     }
 }
 
-impl<T, E> Responder for Result<T, E>
-where
-    T: Responder,
-    E: Into<Error> + Send + Sync,
-{
-    type Future = Either<T::Future, Ready<Result<Response>>>;
+// pub struct WithStatus<R> {
+//     r: R,
+//     status: StatusCode,
+// }
 
-    fn respond(self) -> Self::Future {
-        match self {
-            Ok(res) => Either::Left(res.respond()),
-            Err(err) => Either::Right(future::ready(Err(err.into()))),
-        }
-    }
-}
+// impl<R> Responder for WithStatus<R>
+// where
+//     R: Responder,
+// {
+//     type Future = CustomResponderFuture<R>;
 
-impl Responder for StatusCode {
-    type Future = Ready<Result<Response>>;
+//     fn respond(self) -> Self::Future {
+//         CustomResponderFuture {
+//             future: self.r.respond(),
+//             status: Some(self.status),
+//         }
+//     }
+// }
 
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(Response::new(self, Body::empty())))
-    }
-}
+// impl Responder for () {
+//     type Future = Ready<Result<Response>>;
 
-impl<R> Responder for (StatusCode, R)
-where
-    R: Responder,
-{
-    type Future = CustomResponderFuture<R>;
+//     fn respond(self) -> Self::Future {
+//         future::ready(Ok(Response::new_ok(Body::empty())))
+//     }
+// }
 
-    fn respond(self) -> Self::Future {
-        CustomResponderFuture {
-            future: self.1.respond(),
-            status: Some(self.0),
-        }
-    }
-}
+// impl Responder for Response {
+//     type Future = Ready<Result<Response>>;
 
-#[pin_project]
-pub struct CustomResponderFuture<R: Responder> {
-    #[pin]
-    future: R::Future,
-    status: Option<StatusCode>,
-}
+//     fn respond(self) -> Self::Future {
+//         future::ready(Ok(self))
+//     }
+// }
 
-impl<R> Future for CustomResponderFuture<R>
-where
-    R: Responder,
-{
-    type Output = Result<Response>;
+// impl<T, E> Responder for Result<T, E>
+// where
+//     T: Responder,
+//     E: Into<Error> + Send + Sync,
+// {
+//     type Future = Either<T::Future, Ready<Result<Response>>>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let mut ret = futures::ready!(this.future.poll(cx));
-        if let Ok(ref mut res) = ret {
-            if let Some(status) = this.status.take() {
-                *res.status_mut() = status
-            }
-        }
-        Poll::Ready(ret)
-    }
-}
+//     fn respond(self) -> Self::Future {
+//         match self {
+//             Ok(res) => Either::Left(res.respond()),
+//             Err(err) => Either::Right(future::ready(Err(err.into()))),
+//         }
+//     }
+// }
 
-fn text(s: impl Into<String>) -> Response {
-    let mut res = Response::new_ok(Body::from(s.into()));
-    res.set_static_mime(&mime::TEXT_PLAIN_UTF_8);
-    res
-}
+// impl Responder for StatusCode {
+//     type Future = Ready<Result<Response>>;
 
-impl<'a> Responder for &'a str {
-    type Future = Ready<Result<Response>>;
+//     fn respond(self) -> Self::Future {
+//         future::ready(Ok(Response::new(self, Body::empty())))
+//     }
+// }
 
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(text(self)))
-    }
-}
+// impl<R> Responder for (StatusCode, R)
+// where
+//     R: Responder,
+// {
+//     type Future = CustomResponderFuture<R>;
 
-impl Responder for Box<str> {
-    type Future = Ready<Result<Response>>;
+//     fn respond(self) -> Self::Future {
+//         CustomResponderFuture {
+//             future: self.1.respond(),
+//             status: Some(self.0),
+//         }
+//     }
+// }
 
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(text(self)))
-    }
-}
+// #[pin_project]
+// pub struct CustomResponderFuture<R: Responder> {
+//     #[pin]
+//     future: R::Future,
+//     status: Option<StatusCode>,
+// }
 
-impl Responder for String {
-    type Future = Ready<Result<Response>>;
+// impl<R> Future for CustomResponderFuture<R>
+// where
+//     R: Responder,
+// {
+//     type Output = Result<Response>;
 
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(text(self)))
-    }
-}
+//     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+//         let this = self.project();
+//         let mut ret = futures::ready!(this.future.poll(cx));
+//         if let Ok(ref mut res) = ret {
+//             if let Some(status) = this.status.take() {
+//                 *res.status_mut() = status
+//             }
+//         }
+//         Poll::Ready(ret)
+//     }
+// }
 
-fn json<T>(value: T) -> Result<Response, serde_json::Error>
-where
-    T: Serialize,
-{
-    let bytes_vec = serde_json::to_vec(&value)?;
-    let mut res = Response::new_ok(Body::from(bytes_vec));
-    res.set_static_mime(&mime::APPLICATION_JSON);
-    Ok(res)
-}
+// fn text(s: impl Into<String>) -> Response {
+//     let mut res = Response::new_ok(Body::from(s.into()));
+//     res.set_static_mime(&mime::TEXT_PLAIN_UTF_8);
+//     res
+// }
 
-pub struct Json<T>(pub T);
+// impl<'a> Responder for &'a str {
+//     type Future = Ready<Result<Response>>;
 
-impl<T> Responder for Json<T>
-where
-    T: Serialize + Send + Sync,
-{
-    type Future = Ready<Result<Response>>;
+//     fn respond(self) -> Self::Future {
+//         future::ready(Ok(text(self)))
+//     }
+// }
 
-    fn respond(self) -> Self::Future {
-        future::ready(json(self.0).map_err(Into::into))
-    }
-}
+// impl Responder for Box<str> {
+//     type Future = Ready<Result<Response>>;
+
+//     fn respond(self) -> Self::Future {
+//         future::ready(Ok(text(self)))
+//     }
+// }
+
+// impl Responder for String {
+//     type Future = Ready<Result<Response>>;
+
+//     fn respond(self) -> Self::Future {
+//         future::ready(Ok(text(self)))
+//     }
+// }
+
+// fn json<T>(value: T) -> Result<Response, serde_json::Error>
+// where
+//     T: Serialize,
+// {
+//     let bytes_vec = serde_json::to_vec(&value)?;
+//     let mut res = Response::new_ok(Body::from(bytes_vec));
+//     res.set_static_mime(&mime::APPLICATION_JSON);
+//     Ok(res)
+// }
+
+// pub struct Json<T>(pub T);
+
+// impl<T> Responder for Json<T>
+// where
+//     T: Serialize + Send + Sync,
+// {
+//     type Future = Ready<Result<Response>>;
+
+//     fn respond(self) -> Self::Future {
+//         future::ready(json(self.0).map_err(Into::into))
+//     }
+// }

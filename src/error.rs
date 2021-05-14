@@ -1,9 +1,7 @@
 pub use anyhow::{Error, Result};
 
 use crate::http::{Body, StatusCode};
-use crate::response::{Responder, Response};
-
-use futures::future::{self, Ready};
+use crate::response::Response;
 
 pub trait CatchExt {
     type Value;
@@ -54,13 +52,5 @@ impl From<StatusError> for Response {
             None => Body::empty(),
         };
         Response::new(e.status, body)
-    }
-}
-
-impl Responder for StatusError {
-    type Future = Ready<Result<Response>>;
-
-    fn respond(self) -> Self::Future {
-        future::ready(Ok(self.into()))
     }
 }
