@@ -52,7 +52,7 @@ impl App {
                 eprintln!("Error: {:?}", err);
                 "Oops".respond().await
             }
-            res => res,
+            ret => ret,
         }
     }
 }

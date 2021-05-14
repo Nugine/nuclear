@@ -1,10 +1,10 @@
 use crate::http::{self, HeaderValue, Mime, StatusCode};
 use crate::internal_prelude::*;
 
-use std::convert::TryFrom;
 use std::ops;
 
 use futures::future::{self, Either, Ready};
+use pin_project::pin_project;
 use serde::Serialize;
 
 #[derive(Debug)]
@@ -55,10 +55,42 @@ impl ops::DerefMut for Response {
     }
 }
 
+impl From<StatusCode> for Response {
+    fn from(status: StatusCode) -> Self {
+        Response::new(status, Body::empty())
+    }
+}
+
 pub trait Responder: Send + Sync {
     type Future: Future<Output = Result<Response>> + Send;
 
     fn respond(self) -> Self::Future;
+
+    fn with_status(self, status: StatusCode) -> WithStatus<Self>
+    where
+        Self: Sized,
+    {
+        WithStatus { r: self, status }
+    }
+}
+
+pub struct WithStatus<R> {
+    r: R,
+    status: StatusCode,
+}
+
+impl<R> Responder for WithStatus<R>
+where
+    R: Responder,
+{
+    type Future = CustomResponderFuture<R>;
+
+    fn respond(self) -> Self::Future {
+        CustomResponderFuture {
+            future: self.r.respond(),
+            status: Some(self.status),
+        }
+    }
 }
 
 impl Responder for () {
@@ -92,6 +124,53 @@ where
     }
 }
 
+impl Responder for StatusCode {
+    type Future = Ready<Result<Response>>;
+
+    fn respond(self) -> Self::Future {
+        future::ready(Ok(Response::new(self, Body::empty())))
+    }
+}
+
+impl<R> Responder for (StatusCode, R)
+where
+    R: Responder,
+{
+    type Future = CustomResponderFuture<R>;
+
+    fn respond(self) -> Self::Future {
+        CustomResponderFuture {
+            future: self.1.respond(),
+            status: Some(self.0),
+        }
+    }
+}
+
+#[pin_project]
+pub struct CustomResponderFuture<R: Responder> {
+    #[pin]
+    future: R::Future,
+    status: Option<StatusCode>,
+}
+
+impl<R> Future for CustomResponderFuture<R>
+where
+    R: Responder,
+{
+    type Output = Result<Response>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let mut ret = futures::ready!(this.future.poll(cx));
+        if let Ok(ref mut res) = ret {
+            if let Some(status) = this.status.take() {
+                *res.status_mut() = status
+            }
+        }
+        Poll::Ready(ret)
+    }
+}
+
 fn text(s: impl Into<String>) -> Response {
     let mut res = Response::new_ok(Body::from(s.into()));
     res.set_static_mime(&mime::TEXT_PLAIN_UTF_8);
@@ -122,56 +201,17 @@ impl Responder for String {
     }
 }
 
-fn json<T>(status: StatusCode, value: T) -> Result<Response, serde_json::Error>
+fn json<T>(value: T) -> Result<Response, serde_json::Error>
 where
     T: Serialize,
 {
     let bytes_vec = serde_json::to_vec(&value)?;
-    let mut res = Response::new(status, Body::from(bytes_vec));
+    let mut res = Response::new_ok(Body::from(bytes_vec));
     res.set_static_mime(&mime::APPLICATION_JSON);
     Ok(res)
 }
 
-pub struct Json<T> {
-    status: StatusCode,
-    value: T,
-}
-
-impl<T> Json<T>
-where
-    T: Serialize,
-{
-    pub fn new(status: StatusCode, value: T) -> Self {
-        Self { status, value }
-    }
-
-    pub fn ok(value: T) -> Self {
-        Self {
-            status: StatusCode::OK,
-            value,
-        }
-    }
-}
-
-impl<T> From<Json<T>> for Result<Response>
-where
-    T: Serialize,
-{
-    fn from(this: Json<T>) -> Self {
-        json(this.status, this.value).map_err(Into::into)
-    }
-}
-
-impl<T> TryFrom<Json<T>> for Response
-where
-    T: Serialize,
-{
-    type Error = serde_json::Error;
-
-    fn try_from(j: Json<T>) -> Result<Self, Self::Error> {
-        json(j.status, j.value)
-    }
-}
+pub struct Json<T>(pub T);
 
 impl<T> Responder for Json<T>
 where
@@ -180,12 +220,6 @@ where
     type Future = Ready<Result<Response>>;
 
     fn respond(self) -> Self::Future {
-        future::ready(json(self.status, self.value).map_err(Into::into))
-    }
-}
-
-impl From<StatusCode> for Response {
-    fn from(status: StatusCode) -> Self {
-        Response::new(status, Body::empty())
+        future::ready(json(self.0).map_err(Into::into))
     }
 }

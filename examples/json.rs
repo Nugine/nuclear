@@ -2,25 +2,32 @@ use nuclear::body::JsonExt;
 use nuclear::functional::{handler, middleware};
 use nuclear::http::StatusCode;
 use nuclear::prelude::{Handler, Request, Response, Result};
-use nuclear::response::Json;
+use nuclear::response::{Json, Responder};
 
 use serde_json::Value;
 
 async fn json_echo(mut req: Request) -> Result<Json<Value>> {
     let body = req.json::<Value>().await?;
     println!("{}", body);
-    Ok(Json::ok(body))
+    Ok(Json(body))
 }
 
 async fn recover(req: Request, next: &dyn Handler) -> Result<Response> {
-    next.handle(req).await.or_else(|err| {
-        let value = serde_json::json!({
-            "code": 1000,
-            "message": err.to_string(),
-        });
-        eprintln!("{}", value);
-        Json::new(StatusCode::INTERNAL_SERVER_ERROR, &value).into()
-    })
+    match next.handle(req).await {
+        Err(err) => {
+            let value = serde_json::json!({
+                "code": 1000,
+                "message": err.to_string(),
+            });
+            eprintln!("{}", value);
+
+            Json(value)
+                .with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                .respond()
+                .await
+        }
+        ret => ret,
+    }
 }
 
 #[tokio::main]
