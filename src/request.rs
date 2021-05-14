@@ -1,6 +1,10 @@
+use crate::body::BodyError;
+use crate::internal_prelude::*;
+
 use std::ops;
 
-use crate::internal_prelude::*;
+use bytes::{BufMut, Bytes, BytesMut};
+use futures::stream::StreamExt;
 
 #[derive(Debug)]
 pub struct Request {
@@ -12,6 +16,29 @@ impl Request {
         Self {
             inner: Box::new(req),
         }
+    }
+
+    pub async fn body_bytes(&mut self, length_limit: usize) -> Result<Bytes> {
+        let body = self.body_mut();
+
+        let mut bufs: Vec<Bytes> = Vec::new();
+        let mut total: usize = 0;
+
+        while let Some(bytes) = body.next().await.transpose()? {
+            total = match total.checked_add(bytes.len()) {
+                Some(t) if t <= length_limit => t,
+                _ => return Err(BodyError::LengthLimitExceeded.into()),
+            };
+
+            bufs.push(bytes);
+        }
+
+        let mut buf: BytesMut = BytesMut::with_capacity(total);
+        for bytes in bufs {
+            buf.put(bytes);
+        }
+
+        Ok(buf.freeze())
     }
 }
 

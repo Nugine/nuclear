@@ -1,11 +1,8 @@
 use crate::http::{self, Mime};
 use crate::internal_prelude::*;
 
-use std::mem;
-
 use async_trait::async_trait;
-use bytes::{BufMut, Bytes, BytesMut};
-use futures::stream::StreamExt;
+use bytes::Bytes;
 use serde::Deserialize;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,27 +15,6 @@ pub enum BodyError {
     ContentTypeMismatch,
 }
 
-async fn to_bytes(mut body: Body, length_limit: usize) -> Result<Bytes> {
-    let mut bufs: Vec<Bytes> = Vec::new();
-    let mut total: usize = 0;
-
-    while let Some(bytes) = body.next().await.transpose()? {
-        total = match total.checked_add(bytes.len()) {
-            Some(t) if t <= length_limit => t,
-            _ => return Err(BodyError::LengthLimitExceeded.into()),
-        };
-
-        bufs.push(bytes);
-    }
-
-    let mut buf: BytesMut = BytesMut::with_capacity(total);
-    for bytes in bufs {
-        buf.put(bytes);
-    }
-
-    Ok(buf.freeze())
-}
-
 fn parse_mime(req: &Request) -> Option<Mime> {
     req.headers()
         .get(http::header::CONTENT_TYPE)?
@@ -48,11 +24,7 @@ fn parse_mime(req: &Request) -> Option<Mime> {
         .ok()
 }
 
-fn take_body(hreq: &mut HyperRequest) -> Body {
-    mem::take(hreq.body_mut())
-}
-
-pub struct FullBody(Bytes);
+struct FullBody(Bytes);
 
 #[derive(Debug, Clone)]
 pub struct JsonParser {
@@ -87,10 +59,9 @@ impl JsonParser {
         }
 
         {
-            let hreq = &mut **req;
-            if hreq.extensions().get::<FullBody>().is_none() {
-                let full_body = FullBody(to_bytes(take_body(hreq), self.length_limit).await?);
-                hreq.extensions_mut().insert(full_body);
+            if req.extensions().get::<FullBody>().is_none() {
+                let full_body = FullBody(req.body_bytes(self.length_limit).await?);
+                req.extensions_mut().insert(full_body);
             }
         }
 
