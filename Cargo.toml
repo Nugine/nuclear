@@ -1,6 +1,6 @@
 [package]
 name = "nuclear"
-version = "0.0.10-dev"
+version = "0.0.10"
 authors = ["Nugine <nugine@foxmail.com>"]
 edition = "2018"
 
@@ -27,4 +27,4 @@ tracing = "0.1.26"
 
 [dev-dependencies]
 serde = { version = "1.0.126", features = ["derive"] }
-tokio = { version = "1.5.0", features = ["full"] }
+tokio = { version = "1.6.0", features = ["full"] }
